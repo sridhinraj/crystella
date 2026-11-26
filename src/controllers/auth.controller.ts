@@ -319,6 +319,44 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
   }
 };
 
+export const updateProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { name, avatarUrl, timezone } = req.body;
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(name && { name }),
+        ...(avatarUrl !== undefined && { avatarUrl }),
+        ...(timezone && { timezone }),
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        coupleId: true,
+        timezone: true,
+        lastActiveAt: true,
+        createdAt: true,
+        coupleSpace: {
+          include: {
+            users: {
+              select: { id: true, name: true, email: true, avatarUrl: true, lastActiveAt: true },
+            },
+          },
+        },
+      },
+    });
+
+    res.json({ message: 'Profile updated successfully', user });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+};
+
 export const updateFcmToken = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;

@@ -41,34 +41,86 @@ export const setupSocketHandlers = (io: SocketIOServer) => {
 
   io.on('connection', (socket: AuthenticatedSocket) => {
     const userId = socket.userId;
-    const coupleId = socket.coupleId;
+    let coupleId = socket.coupleId;
+
+    const joinRoom = (targetCoupleId: string) => {
+      coupleId = targetCoupleId;
+      socket.coupleId = targetCoupleId;
+      const room = `space_${targetCoupleId}`;
+      socket.join(room);
+      console.log(`[Socket] User ${userId} joined room ${room}`);
+      socket.to(room).emit('presence:update', { userId, status: 'online' });
+    };
 
     if (coupleId) {
-      const room = `space_${coupleId}`;
-      socket.join(room);
+      joinRoom(coupleId);
+    }
 
-      // Broadcast partner is online
-      socket.to(room).emit('presence:update', { userId, status: 'online' });
+    // Explicit room join event from client
+    socket.on('join:space', async (data?: { coupleId?: string }) => {
+      let targetId = data?.coupleId || coupleId;
+      if (!targetId && userId) {
+        // Query database in case pairing occurred after socket handshake
+        try {
+          const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { coupleId: true },
+          });
+          if (user?.coupleId) targetId = user.coupleId;
+        } catch (_) {}
+      }
+      if (targetId) {
+        joinRoom(targetId);
+        socket.emit('joined:space', { coupleId: targetId });
+      }
+    });
 
-      // Drawing real-time stroke relay
-      socket.on('draw:stroke', (strokeData) => {
+    const getRoom = async (): Promise<string | null> => {
+      if (coupleId) return `space_${coupleId}`;
+      if (userId) {
+        try {
+          const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { coupleId: true },
+          });
+          if (user?.coupleId) {
+            joinRoom(user.coupleId);
+            return `space_${user.coupleId}`;
+          }
+        } catch (_) {}
+      }
+      return null;
+    };
+
+    // Drawing real-time stroke relay
+    socket.on('draw:stroke', async (strokeData) => {
+      const room = await getRoom();
+      if (room) {
         socket.to(room).emit('draw:stroke', {
           senderId: userId,
           ...strokeData,
         });
-      });
+      }
+    });
 
-      socket.on('draw:undo', () => {
+    socket.on('draw:undo', async () => {
+      const room = await getRoom();
+      if (room) {
         socket.to(room).emit('draw:undo', { senderId: userId });
-      });
+      }
+    });
 
-      socket.on('draw:clear', () => {
+    socket.on('draw:clear', async () => {
+      const room = await getRoom();
+      if (room) {
         socket.to(room).emit('draw:clear', { senderId: userId });
-      });
+      }
+    });
 
-      // Instant love tap / thinking of you nudge
-      socket.on('note:tap', async (data) => {
-        // Look up sender name from DB for the partner's notification banner
+    // Instant love tap / thinking of you nudge
+    socket.on('note:tap', async (data) => {
+      const room = await getRoom();
+      if (room) {
         let senderName = 'Your Partner';
         try {
           const sender = await prisma.user.findUnique({
@@ -85,19 +137,24 @@ export const setupSocketHandlers = (io: SocketIOServer) => {
           content: data.content || 'Sent you love!',
           timestamp: new Date().toISOString(),
         });
-      });
+      }
+    });
 
-      // Realtime game actions
-      socket.on('game:action', (gameAction) => {
+    // Realtime game actions
+    socket.on('game:action', async (gameAction) => {
+      const room = await getRoom();
+      if (room) {
         socket.to(room).emit('game:action', {
           senderId: userId,
           ...gameAction,
         });
-      });
+      }
+    });
 
-      socket.on('disconnect', () => {
-        socket.to(room).emit('presence:update', { userId, status: 'offline' });
-      });
-    }
+    socket.on('disconnect', () => {
+      if (coupleId) {
+        socket.to(`space_${coupleId}`).emit('presence:update', { userId, status: 'offline' });
+      }
+    });
   });
 };

@@ -1,0 +1,153 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               String       @id @default(uuid())
+  email            String       @unique
+  passwordHash     String
+  name             String
+  avatarUrl        String?
+  coupleId         String?
+  coupleSpace      CoupleSpace? @relation(fields: [coupleId], references: [id])
+  fcmToken         String?
+  timezone         String       @default("UTC")
+  lastActiveAt     DateTime     @default(now())
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  drawingsSent     Drawing[]    @relation("UserDrawings")
+  notesSent        LoveNote[]   @relation("UserNotes")
+  memoriesCreated  Memory[]     @relation("UserMemories")
+}
+
+model CoupleSpace {
+  id                    String      @id @default(uuid())
+  inviteCode            String?     @unique
+  codeExpiresAt         DateTime?
+  status                String      @default("PENDING") // PENDING, ACTIVE, UNPAIRED
+  anniversaryDate       DateTime?
+  targetMeetDate        DateTime?
+
+  currentLevel          Int         @default(1)
+  xp                    Int         @default(0)
+  stars                 Int         @default(0)
+  hearts                Int         @default(5)
+  streakCount           Int         @default(0)
+  streakLastCompleted   DateTime?
+  streakFreezes         Int         @default(1)
+  relationshipScore     Int         @default(100)
+
+  latestWidgetType      String?     // "DRAWING" | "NOTE"
+  latestWidgetContent   String?
+  latestWidgetSender    String?
+  latestWidgetTimestamp DateTime?
+
+  users                 User[]
+  drawings              Drawing[]
+  loveNotes             LoveNote[]
+  questProgress         QuestProgress[]
+  memories              Memory[]
+  unlockedBadges        CoupleBadge[]
+  games                 GameSession[]
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+}
+
+model Drawing {
+  id          String      @id @default(uuid())
+  coupleId    String
+  couple      CoupleSpace @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      User        @relation("UserDrawings", fields: [senderId], references: [id])
+  strokeData  String
+  imageUrl    String
+  caption     String?
+  createdAt   DateTime    @default(now())
+}
+
+model LoveNote {
+  id          String      @id @default(uuid())
+  coupleId    String
+  couple      CoupleSpace @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      User        @relation("UserNotes", fields: [senderId], references: [id])
+  type        String      // "EMOJI" | "TEXT" | "TAP"
+  content     String
+  createdAt   DateTime    @default(now())
+}
+
+model QuestTask {
+  id          Int             @id @default(autoincrement())
+  levelNumber Int             @unique
+  title       String
+  description String
+  category    String          // "Fun", "Romantic", "Creative", "Deep Talk"
+  iconName    String
+  xpReward    Int             @default(50)
+  starsReward Int             @default(3)
+  heartsCost  Int             @default(1)
+  progress    QuestProgress[]
+}
+
+model QuestProgress {
+  id          String      @id @default(uuid())
+  coupleId    String
+  couple      CoupleSpace @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  taskId      Int
+  task        QuestTask   @relation(fields: [taskId], references: [id])
+  user1Done   Boolean     @default(false)
+  user1DoneAt DateTime?
+  user1Proof  String?
+  user2Done   Boolean     @default(false)
+  user2DoneAt DateTime?
+  user2Proof  String?
+  status      String      @default("IN_PROGRESS") // "IN_PROGRESS" | "COMPLETED"
+  completedAt DateTime?
+
+  @@unique([coupleId, taskId])
+}
+
+model Memory {
+  id          String      @id @default(uuid())
+  coupleId    String
+  couple      CoupleSpace @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  creatorId   String
+  creator     User        @relation("UserMemories", fields: [creatorId], references: [id])
+  title       String
+  description String?
+  photoUrl    String?
+  date        DateTime
+  category    String?
+  createdAt   DateTime    @default(now())
+}
+
+model CoupleBadge {
+  id          String      @id @default(uuid())
+  coupleId    String
+  couple      CoupleSpace @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  code        String
+  title       String
+  icon        String
+  unlockedAt  DateTime    @default(now())
+
+  @@unique([coupleId, code])
+}
+
+model GameSession {
+  id          String      @id @default(uuid())
+  coupleId    String
+  couple      CoupleSpace @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  gameType    String
+  stateJson   String
+  currentTurn String?
+  winnerId    String?
+  status      String      @default("ACTIVE")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
